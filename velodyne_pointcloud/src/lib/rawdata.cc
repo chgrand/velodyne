@@ -48,8 +48,10 @@ namespace velodyne_rawdata
   void RawData::setParameters(double min_range,
                               double max_range,
                               double view_direction,
-                              double view_width)
+                              double view_width,
+			      double min_intensity)
   {
+    config_.min_intensity = min_intensity;
     config_.min_range = min_range;
     config_.max_range = max_range;
 
@@ -158,88 +160,7 @@ namespace velodyne_rawdata
              ||(config_.min_angle > config_.max_angle 
              && (raw->blocks[i].rotation <= config_.max_angle 
              || raw->blocks[i].rotation >= config_.min_angle))){
-          float distance = tmp.uint * DISTANCE_RESOLUTION;
-          distance += corrections.dist_correction;
-  
-          float cos_vert_angle = corrections.cos_vert_correction;
-          float sin_vert_angle = corrections.sin_vert_correction;
-          float cos_rot_correction = corrections.cos_rot_correction;
-          float sin_rot_correction = corrections.sin_rot_correction;
-  
-          // cos(a-b) = cos(a)*cos(b) + sin(a)*sin(b)
-          // sin(a-b) = sin(a)*cos(b) - cos(a)*sin(b)
-          float cos_rot_angle = 
-            cos_rot_table_[raw->blocks[i].rotation] * cos_rot_correction + 
-            sin_rot_table_[raw->blocks[i].rotation] * sin_rot_correction;
-          float sin_rot_angle = 
-            sin_rot_table_[raw->blocks[i].rotation] * cos_rot_correction - 
-            cos_rot_table_[raw->blocks[i].rotation] * sin_rot_correction;
-  
-          float horiz_offset = corrections.horiz_offset_correction;
-          float vert_offset = corrections.vert_offset_correction;
-  
-          // Compute the distance in the xy plane (w/o accounting for rotation)
-          /**the new term of 'vert_offset * sin_vert_angle'
-           * was added to the expression due to the mathemathical
-           * model we used.
-           */
-          float xy_distance = distance * cos_vert_angle + vert_offset * sin_vert_angle;
-  
-          // Calculate temporal X, use absolute value.
-          float xx = xy_distance * sin_rot_angle - horiz_offset * cos_rot_angle;
-          // Calculate temporal Y, use absolute value
-          float yy = xy_distance * cos_rot_angle + horiz_offset * sin_rot_angle;
-          if (xx < 0) xx=-xx;
-          if (yy < 0) yy=-yy;
-    
-          // Get 2points calibration values,Linear interpolation to get distance
-          // correction for X and Y, that means distance correction use
-          // different value at different distance
-          float distance_corr_x = 0;
-          float distance_corr_y = 0;
-          if (corrections.two_pt_correction_available) {
-            distance_corr_x = 
-              (corrections.dist_correction - corrections.dist_correction_x)
-                * (xx - 2.4) / (25.04 - 2.4) 
-              + corrections.dist_correction_x;
-            distance_corr_x -= corrections.dist_correction;
-            distance_corr_y = 
-              (corrections.dist_correction - corrections.dist_correction_y)
-                * (yy - 1.93) / (25.04 - 1.93)
-              + corrections.dist_correction_y;
-            distance_corr_y -= corrections.dist_correction;
-          }
-  
-          float distance_x = distance + distance_corr_x;
-          /**the new term of 'vert_offset * sin_vert_angle'
-           * was added to the expression due to the mathemathical
-           * model we used.
-           */
-          xy_distance = distance_x * cos_vert_angle + vert_offset * sin_vert_angle ;
-          ///the expression wiht '-' is proved to be better than the one with '+'
-          x = xy_distance * sin_rot_angle - horiz_offset * cos_rot_angle;
-  
-          float distance_y = distance + distance_corr_y;
-          xy_distance = distance_y * cos_vert_angle + vert_offset * sin_vert_angle ;
-          /**the new term of 'vert_offset * sin_vert_angle'
-           * was added to the expression due to the mathemathical
-           * model we used.
-           */
-          y = xy_distance * cos_rot_angle + horiz_offset * sin_rot_angle;
-  
-          // Using distance_y is not symmetric, but the velodyne manual
-          // does this.
-          /**the new term of 'vert_offset * cos_vert_angle'
-           * was added to the expression due to the mathemathical
-           * model we used.
-           */
-          z = distance_y * sin_vert_angle + vert_offset*cos_vert_angle;
-  
-          /** Use standard ROS coordinate system (right-hand rule) */
-          float x_coord = y;
-          float y_coord = -x;
-          float z_coord = z;
-  
+
           /** Intensity Calculation */
   
           float min_intensity = corrections.min_intensity;
@@ -252,24 +173,113 @@ namespace velodyne_rawdata
                              * (1 - corrections.focal_distance / 13100);
           float focal_slope = corrections.focal_slope;
           intensity += focal_slope * (abs(focal_offset - 256 * 
-            (1 - static_cast<float>(tmp.uint)/65535)*(1 - static_cast<float>(tmp.uint)/65535)));
+            (1 - tmp.uint/65535)*(1 - tmp.uint/65535)));
           intensity = (intensity < min_intensity) ? min_intensity : intensity;
           intensity = (intensity > max_intensity) ? max_intensity : intensity;
+
+	  /** if intensity > min_value then compute 3D point */
+
+	  if(intensity > config_.min_intensity) {
+
+	    /** Distance and position */
+
+	    float distance = tmp.uint * DISTANCE_RESOLUTION;
+	    distance += corrections.dist_correction;
+	    
+	    float cos_vert_angle = corrections.cos_vert_correction;
+	    float sin_vert_angle = corrections.sin_vert_correction;
+	    float cos_rot_correction = corrections.cos_rot_correction;
+	    float sin_rot_correction = corrections.sin_rot_correction;
+	    
+	    // cos(a-b) = cos(a)*cos(b) + sin(a)*sin(b)
+	    // sin(a-b) = sin(a)*cos(b) - cos(a)*sin(b)
+	    float cos_rot_angle = 
+	      cos_rot_table_[raw->blocks[i].rotation] * cos_rot_correction + 
+	      sin_rot_table_[raw->blocks[i].rotation] * sin_rot_correction;
+	    float sin_rot_angle = 
+	      sin_rot_table_[raw->blocks[i].rotation] * cos_rot_correction - 
+	      cos_rot_table_[raw->blocks[i].rotation] * sin_rot_correction;
+	    
+	    float horiz_offset = corrections.horiz_offset_correction;
+	    float vert_offset = corrections.vert_offset_correction;
+	    
+	    // Compute the distance in the xy plane (w/o accounting for rotation)
+	    /**the new term of 'vert_offset * sin_vert_angle'
+	     * was added to the expression due to the mathemathical
+	     * model we used.
+	     */
+	    float xy_distance = distance * cos_vert_angle + vert_offset * sin_vert_angle;
+	    
+	    // Calculate temporal X, use absolute value.
+	    float xx = xy_distance * sin_rot_angle - horiz_offset * cos_rot_angle;
+	    // Calculate temporal Y, use absolute value
+	    float yy = xy_distance * cos_rot_angle + horiz_offset * sin_rot_angle;
+	    if (xx < 0) xx=-xx;
+	    if (yy < 0) yy=-yy;
+	    
+	    // Get 2points calibration values,Linear interpolation to get distance
+	    // correction for X and Y, that means distance correction use
+	    // different value at different distance
+	    float distance_corr_x = 0;
+	    float distance_corr_y = 0;
+	    if (corrections.two_pt_correction_available) {
+	      distance_corr_x = 
+		(corrections.dist_correction - corrections.dist_correction_x)
+                * (xx - 2.4) / (25.04 - 2.4) 
+		+ corrections.dist_correction_x;
+	      distance_corr_x -= corrections.dist_correction;
+	      distance_corr_y = 
+		(corrections.dist_correction - corrections.dist_correction_y)
+                * (yy - 1.93) / (25.04 - 1.93)
+		+ corrections.dist_correction_y;
+	      distance_corr_y -= corrections.dist_correction;
+	    }
+	    
+	    float distance_x = distance + distance_corr_x;
+	    /**the new term of 'vert_offset * sin_vert_angle'
+	     * was added to the expression due to the mathemathical
+	     * model we used.
+	     */
+	    xy_distance = distance_x * cos_vert_angle + vert_offset * sin_vert_angle ;
+	    ///the expression wiht '-' is proved to be better than the one with '+'
+	    x = xy_distance * sin_rot_angle - horiz_offset * cos_rot_angle;
+	    
+	    float distance_y = distance + distance_corr_y;
+	    xy_distance = distance_y * cos_vert_angle + vert_offset * sin_vert_angle ;
+	    /**the new term of 'vert_offset * sin_vert_angle'
+	     * was added to the expression due to the mathemathical
+	     * model we used.
+	     */
+	    y = xy_distance * cos_rot_angle + horiz_offset * sin_rot_angle;
+	    
+	    // Using distance_y is not symmetric, but the velodyne manual
+	    // does this.
+	    /**the new term of 'vert_offset * cos_vert_angle'
+	     * was added to the expression due to the mathemathical
+	     * model we used.
+	     */
+	    z = distance_y * sin_vert_angle + vert_offset*cos_vert_angle;
+	    
+	    /** Use standard ROS coordinate system (right-hand rule) */
+	    float x_coord = y;
+	    float y_coord = -x;
+	    float z_coord = z;
   
-          if (pointInRange(distance)) {
-  
-            // convert polar coordinates to Euclidean XYZ
-            VPoint point;
-            point.ring = corrections.laser_ring;
-            point.x = x_coord;
-            point.y = y_coord;
-            point.z = z_coord;
-            point.intensity = (uint8_t) intensity;
-  
-            // append this point to the cloud
-            pc.points.push_back(point);
-            ++pc.width;
-          }
+	    if (pointInRange(distance)) {
+	      
+	      // convert polar coordinates to Euclidean XYZ
+	      VPoint point;
+	      point.ring = corrections.laser_ring;
+	      point.x = x_coord;
+	      point.y = y_coord;
+	      point.z = z_coord;
+	      point.intensity = (uint8_t) intensity;
+	      
+	      // append this point to the cloud
+	      pc.points.push_back(point);
+	      ++pc.width;
+	    }
+	  }
         }
       }
     }

@@ -140,7 +140,7 @@ namespace velodyne_rawdata
     void unpack(const velodyne_msgs::VelodynePacket &pkt, VPointCloud &pc);
     
     void setParameters(double min_range, double max_range, double view_direction,
-                       double view_width);
+                       double view_width, double min_intensity);
 
   private:
 
@@ -151,7 +151,8 @@ namespace velodyne_rawdata
       double min_range;                ///< minimum range to publish
       int min_angle;                   ///< minimum angle to publish
       int max_angle;                   ///< maximum angle to publish
-      
+      double min_intensity;            ///< minimum intensity to publish
+
       double tmp_min_angle;
       double tmp_max_angle;
     } Config;
