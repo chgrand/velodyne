@@ -1,3 +1,10 @@
+This is a fork from mainline at ros-drivers/velodyne 
+-> add a min threshold on laser intensity accessible via dynamic_reconfigure (http://wiki.ros.org/dynamic_reconfigure)
+
+Launch velodyne driver as usual then start de rqt_reconfigure tool::
+
+  rosrun rqt_reconfigure rqt_reconfigure
+
 Overview
 ========
 
